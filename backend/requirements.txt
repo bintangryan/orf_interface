@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+torch
+transformers
+pandas
+numpy
+shap
+python-multipart
+scikit-learn
+tqdm
