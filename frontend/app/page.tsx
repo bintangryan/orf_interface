@@ -42,35 +42,26 @@ const FRAUD_COLOR = "#BD114A";
 const LEGIT_COLOR = "#1E7D6A";
 const ease = "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]";
 
-// Fungsi Matematika Deteksi Outlier Berbasis Deviasi Mutlak dan Proporsi Kontribusi Total
+// PENYESUAIAN ILMIAH: Deteksi Fitur Dominan Berbasis Ambang Batas Kontribusi Absolut (Absolute Share Metrics)
 const detectShapAnomalies = (shapData: ShapDataItem[]) => {
   if (!shapData || shapData.length === 0) return null;
 
-  const totalAbs = shapData.reduce(
+  const totalAbsoluteMagnitude = shapData.reduce(
     (sum, item) => sum + Math.abs(item.value),
     0
   );
+  if (totalAbsoluteMagnitude === 0) return null;
 
   for (const item of shapData) {
-    const others = shapData.filter(x => x.label !== item.label);
-
-    const otherMean =
-      others.reduce((s, x) => s + x.value, 0) / others.length;
-
-    const distance = Math.abs(item.value - otherMean);
-
-    const share = totalAbs === 0 ? 0 : Math.abs(item.value) / totalAbs;
-
-    if (
-      distance > 0.18 &&             // berbeda jauh
-      Math.abs(item.value) > 0.15 && // pengaruh besar
-      share > 0.25                   // minimal 25% kontribusi total
-    ) {
+    const share = Math.abs(item.value) / totalAbsoluteMagnitude;
+    
+    // Jika kontribusi fitur tunggal mendominasi lebih dari 40% dari total bobot eksplanasi makro
+    if (share > 0.40 && Math.abs(item.value) > 0.10) {
       return {
         label: item.label,
         value: item.value,
-        distance,
-        share,
+        distance: totalAbsoluteMagnitude, // fallback penyelarasan variabel template awal
+        share: share * 100,
         type: item.value < 0 ? "negatif" : "positif"
       };
     }
@@ -118,6 +109,7 @@ export default function ORFPage() {
     }
   }, [activeTab]);
 
+  // PENYESUAIAN KUNCI: Dipetakan agar sinkron dengan data struktur internal baru
   const tabs: { id: FieldKey; label: string; placeholder: string; backendKey: string }[] = [
     { id: "title", label: "Posisi", placeholder: "Contoh: Staff Data Entry, Marketing Manager...", backendKey: "title_id" },
     { id: "profile", label: "Profil Perusahaan", placeholder: "Tempel deskripsi perusahaan di sini...", backendKey: "company_profile_id" },
@@ -156,12 +148,7 @@ export default function ORFPage() {
   const isFraud = result?.prediction === "FRAUD";
   const shapAnomaly = result ? detectShapAnomalies(result.shap_data) : null;
 
-  // Hitung total nilai absolut SHAP untuk pembagi persentase kontribusi relatif
-  const totalShapAbs = result?.shap_data
-    ? result.shap_data.reduce((sum, item) => sum + Math.abs(item.value), 0)
-    : 0;
-
-  // ── LANDING VIEW ───────────────────────────────────────────────────────────
+  // ── Landing View ───────────────────────────────────────────────────────────
   if (!started) {
     const cardConfig = {
       fraud: {
@@ -173,8 +160,8 @@ export default function ORFPage() {
         msg: "Model mendeteksi pola teks yang memiliki kemiripan dengan pola yang lebih sering muncul pada lowongan fraud di data pelatihan.",
         icon: <ShieldAlert size={20} strokeWidth={2.5} style={{ color: FRAUD_COLOR }} />,
         miniShap: [
-          { label: "Deskripsi Pekerjaan", val: "+42.1%", w: "70%", pos: true },
-          { label: "Keuntungan", val: "+28.0%", w: "45%", pos: true },
+          { label: "Deskripsi Pekerjaan", val: "+0.421", w: "70%", pos: true },
+          { label: "Benefit", val: "+0.280", w: "45%", pos: true }, // Diselaraskan stringnya
         ],
       },
       valid: {
@@ -186,8 +173,8 @@ export default function ORFPage() {
         msg: "Model mendeteksi pola teks yang lebih dekat dengan karakteristik lowongan valid pada data pelatihan.",
         icon: <ShieldCheck size={20} strokeWidth={2.5} style={{ color: LEGIT_COLOR }} />,
         miniShap: [
-          { label: "Profil Perusahaan", val: "-31.0%", w: "50%", pos: false },
-          { label: "Deskripsi Pekerjaan", val: "-15.0%", w: "25%", pos: false },
+          { label: "Profil Perusahaan", val: "-0.310", w: "50%", pos: false },
+          { label: "Deskripsi Pekerjaan", val: "-0.150", w: "25%", pos: false },
         ],
       },
     };
@@ -293,7 +280,7 @@ export default function ORFPage() {
                                   {shap.pos && <div className="h-full rounded-r-full" style={{ width: shap.w, backgroundColor: FRAUD_COLOR }} />}
                                 </div>
                               </div>
-                              <span className="text-[10px] font-bold w-10 text-right" style={{ color: shap.pos ? FRAUD_COLOR : LEGIT_COLOR }}>
+                              <span className="text-[10px] font-bold w-12 text-right" style={{ color: shap.pos ? FRAUD_COLOR : LEGIT_COLOR }}>
                                 {shap.val}
                               </span>
                             </div>
@@ -331,9 +318,9 @@ export default function ORFPage() {
                 </div>
                 <div className="space-y-5">
                   {[
-                    { label: "Deskripsi Pekerjaan", value: "+42.1%", w: "85%", pos: true },
-                    { label: "Profil Perusahaan", value: "+21.4%", w: "45%", pos: true },
-                    { label: "Persyaratan", value: "-10.2%", w: "20%", pos: false },
+                    { label: "Deskripsi Pekerjaan", value: "+0.421", w: "85%", pos: true },
+                    { label: "Profil Perusahaan", value: "+0.214", w: "45%", pos: true },
+                    { label: "Persyaratan", value: "-0.102", w: "20%", pos: false },
                   ].map((item, i) => (
                     <div key={i}>
                       <div className="flex items-baseline justify-between mb-2">
@@ -381,7 +368,7 @@ export default function ORFPage() {
     );
   }
 
-  // ── WORKSPACE ──────────────────────────────────────────────────────────────
+  // ── Workspace View ─────────────────────────────────────────────────────────
   return (
     <main className="h-screen flex flex-col bg-slate-100 overflow-hidden font-sans">
       <header className="flex-shrink-0 h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 z-50 shadow-sm">
@@ -601,7 +588,7 @@ export default function ORFPage() {
                   </div>
                 </div>
 
-                {/* ── SINKRONISASI LOGIKA INTERPRETASI BARU ── */}
+                {/* Card Outlier Dominan */}
                 {shapAnomaly && (
                   <div className="bg-amber-50 rounded-2xl border border-amber-200/80 p-5 shadow-sm flex items-start gap-4 animate-fade-in">
                     <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
@@ -625,14 +612,14 @@ export default function ORFPage() {
                   </div>
                 )}
 
-                {/* List SHAP Chart Berbasis Persentase Kontribusi Relatif */}
+                {/* List SHAP Chart Berbasis Nilai SHAP Asli Desimal */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 p-5 lg:p-6 shadow-sm">
                   <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
                     <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
                       <Binary size={18} style={{ color: BLUE }} strokeWidth={2.5} />
                     </div>
                     <div>
-                      <h3 className="text-[15px] font-bold text-slate-800">  Analisis Pengaruh Setiap Komponen Lowongan</h3>
+                      <h3 className="text-[15px] font-bold text-slate-800">Analisis Pengaruh Setiap Komponen Lowongan</h3>
                       <p className="text-[12px] text-slate-400 mt-0.5">Klik bar kontribusi di bawah untuk melihat temuan khusus dan analisis interpretasi.</p>
                     </div>
                   </div>
@@ -658,40 +645,22 @@ export default function ORFPage() {
                       const isPos = item.value > 0;
                       const isExpanded = !!expandedShap[item.label];
 
-                      // ── [BARU] LOGIKA RASIO PERSENTASE KONTRIBUSI SHAP RELATIF ──
-                      const relativeShare = totalShapAbs === 0 ? 0 : Math.abs(item.value) / totalShapAbs;
-                      const percentageValue = relativeShare * 100;
-                      // Amankan lebar bar visualisasi agar pas di scale basis-1/2 (max 100%)
-                      const barWidth = Math.min(percentageValue, 100);
+                      const barWidth = Math.min((Math.abs(item.value) / 0.6) * 100, 100);
 
                       let fieldKey: FieldKey | null = null;
                       const labelLower = item.label.toLowerCase();
                       
-                      if (labelLower.includes("posisi") || labelLower.includes("title")) fieldKey = "title";
-                      else if (labelLower.includes("profil") || labelLower.includes("profile") || labelLower.includes("company")) fieldKey = "profile";
+                      if (labelLower.includes("posisi") || labelLower.includes("pekerjaan") || labelLower.includes("title")) fieldKey = "title";
+                      else if (labelLower.includes("profil") || labelLower.includes("perusahaan") || labelLower.includes("profile")) fieldKey = "profile";
                       else if (labelLower.includes("deskripsi") || labelLower.includes("description")) fieldKey = "description";
                       else if (labelLower.includes("persyaratan") || labelLower.includes("requirements")) fieldKey = "requirements";
                       else if (labelLower.includes("benefit") || labelLower.includes("keuntungan") || labelLower.includes("benefits")) fieldKey = "benefits";
 
-                      let localHighlightHtml = "";
-                      if (result.highlights) {
-                        if (fieldKey && result.highlights[fieldKey]) {
-                          localHighlightHtml = result.highlights[fieldKey];
-                        } 
-                        else if (fieldKey) {
-                          const targetTab = tabs.find(t => t.id === fieldKey);
-                          if (targetTab && result.highlights[targetTab.backendKey]) {
-                            localHighlightHtml = result.highlights[targetTab.backendKey];
-                          }
-                        }
-                        if (!localHighlightHtml && result.highlights[item.label]) {
-                          localHighlightHtml = result.highlights[item.label];
-                        }
-                      }
+                      // SINKRONISASI LOGIKAL TOTAL: Mengarahkan key extraction langsung pada string label bersih backend mapping
+                      const localHighlightHtml = result.highlights ? result.highlights[item.label] : "";
 
                       const matchedFindings = result.findings?.filter(f => {
-                        const token = item.label.split(" ")[0].toLowerCase();
-                        return f.toLowerCase().includes(token) || (fieldKey && f.toLowerCase().includes(fieldKey));
+                        return f.toLowerCase().includes(item.label.toLowerCase()) || (fieldKey && f.toLowerCase().includes(fieldKey));
                       }) || [];
 
                       const showTextHighlighting = item.value > 0.05;
@@ -717,14 +686,13 @@ export default function ORFPage() {
                                   <span className="text-[13px] font-bold text-slate-700">{item.label}</span>
                                   {matchedFindings.length > 0 && (
                                     <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
-                                      {matchedFindings.length} Temuan
+                                      {matchedFindings.length} Analisis
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {/* ── MENGUBAH TAMPILAN MENJADI PERSENTASE ── */}
                                   <span className="text-[12px] font-bold tabular-nums" style={{ color: isLowInfluence ? BLUE : (isPos ? FRAUD_COLOR : LEGIT_COLOR) }}>
-                                    {item.value > 0 ? "+" : "-"}{percentageValue.toFixed(1)}%
+                                    {item.value > 0 ? "+" : ""}{item.value.toFixed(3)}
                                   </span>
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 w-14 text-right">
                                     {isLowInfluence ? "• netral" : (isPos ? "↑ fraud" : "↓ valid")}
@@ -732,14 +700,14 @@ export default function ORFPage() {
                                 </div>
                               </div>
 
-                              {/* Sumbu Tengah Sempurna Menggunakan basis-1/2 & Lebar Bar Berbasis Persentase Kontribusi */}
+                              {/* Sumbu Tengah Sempurna Menggunakan basis-1/2 */}
                               <div className="w-full h-2.5 rounded-full bg-slate-100 flex overflow-hidden">
                                 <div className="basis-1/2 flex justify-end">
-                                  {!isPos && <div className="h-full rounded-l-full transition-all duration-500 origin-right" style={{ width: `${barWidth}%`, backgroundColor: leftBarColor }} />}
+                                  {!isPos && <div className="h-full rounded-l-full" style={{ width: `${barWidth}%`, backgroundColor: leftBarColor }} />}
                                 </div>
                                 <div className="w-0.5 h-full bg-slate-300 z-10 flex-shrink-0" />
                                 <div className="basis-1/2 flex justify-start">
-                                  {isPos && <div className="h-full rounded-r-full transition-all duration-500 origin-left" style={{ width: `${barWidth}%`, backgroundColor: rightBarColor }} />}
+                                  {isPos && <div className="h-full rounded-r-full" style={{ width: `${barWidth}%`, backgroundColor: rightBarColor }} />}
                                 </div>
                               </div>
                             </div>
@@ -752,7 +720,7 @@ export default function ORFPage() {
                             </div>
                           </div>
 
-                          {/* DROP-DOWN VIEW */}
+                          {/* DROP-DOWN VIEW PANEL */}
                           {isExpanded && (
                             <div className="px-4 pb-4 pt-1 border-t border-slate-100 bg-white space-y-4">
                               
@@ -760,7 +728,7 @@ export default function ORFPage() {
                                 <div className="space-y-2 pt-2">
                                   <div className="flex items-center gap-1.5 text-slate-500">
                                     <AlertCircle size={13} className="text-amber-500" />
-                                    <span className="text-[11px] font-bold uppercase tracking-wider">TEMUAN ANALISIS</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">TEMUAN DIAGNOSTIK</span>
                                   </div>
                                   <div className="space-y-2">
                                     {matchedFindings.map((finding, fIdx) => (
@@ -802,24 +770,18 @@ export default function ORFPage() {
                   </div>
                 </div>
 
-                {/* Temuan global pendukung tambahan */}
-                {result.findings && result.findings.filter(f => !result.shap_data?.some(item => f.toLowerCase().includes(item.label.split(" ")[0].toLowerCase()))).length > 0 && (
-                  <div className="bg-white rounded-2xl border border-slate-200/80 p-5 lg:p-6 shadow-sm">
-                    <div className="flex items-center gap-3 mb-4 pb-3 border-b border-slate-100">
-                      <AlertCircle size={16} className="text-slate-400" />
-                      <h4 className="text-[14px] font-bold text-slate-800">Temuan Tambahan Lainnya</h4>
+                {/* Temuan global tambahan (seperti baris Kepadatan Informasi) */}
+                {result.findings && result.findings.filter(f => f.includes("Distribusi") || f.includes("seimbang")).map((f, i) => (
+                  <div key={i} className="bg-emerald-50 rounded-2xl border border-emerald-200 p-5 shadow-sm flex items-start gap-4 animate-fade-in">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <ShieldCheck size={20} style={{ color: LEGIT_COLOR }} strokeWidth={2.5} />
                     </div>
-                    <div className="space-y-2">
-                      {result.findings
-                        .filter(f => !result.shap_data?.some(item => f.toLowerCase().includes(item.label.split(" ")[0].toLowerCase())))
-                        .map((f, i) => (
-                          <div key={i} className="p-3.5 bg-slate-50 border border-slate-100 rounded-lg text-[12px] text-slate-700 font-medium">
-                            {f}
-                          </div>
-                        ))}
+                    <div>
+                      <h4 className="text-[14px] font-bold text-emerald-900 tracking-tight">Kepadatan Informasi Terverifikasi Aman</h4>
+                      <p className="text-[12px] text-emerald-700 mt-1 leading-relaxed font-medium">{f}</p>
                     </div>
                   </div>
-                )}
+                ))}
 
               </div>
             </div>

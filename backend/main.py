@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import torch
@@ -7,192 +8,161 @@ import numpy as np
 import re
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
-from model_loader import get_assets
-from xai_engine import XAIDiagnosticEngine, get_model_based_highlights_html, FIELD_MAPPING, MAX_LENS, calculate_dynamic_stats
 
-app = FastAPI()
+from model_loader import get_assets
+from xai_engine import XAIDiagnosticEngine, FIELD_MAPPING, calculate_dynamic_stats
+
+app = FastAPI(title="Online Recruitment Fraud Diagnostic System API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\MODEL_BY_FIELD\\model_IndoBERT_TextOnly_S1_20.pth"
+
+# ── KONFIGURASI PATH ASSET TEXT-ONLY ──
+MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\MODEL_BY_FIELD\\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY (1).pth"
 MODEL_NAME = "indobenchmark/indobert-base-p2"
-CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\train_40.csv"
 
-# ── FUNGSI CLEANING TEKS DARI PROSES TRAINING KAGGLE/COLAB ──
+TRAIN_CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\train_40.csv"
+TEST_CSV_PATH  = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\test_20f.csv"
+
 def clean_text(text):
-    if pd.isna(text) or text == "" or not isinstance(text, str):
-        return ""
-
-    # 1. Hilangkan tag HTML
+    if pd.isna(text) or text == "" or not isinstance(text, str): return ""
     text = BeautifulSoup(text, "html.parser").get_text()
-
-    # 2. Spasi antara CamelCase dan tanda baca
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
     text = re.sub(r'([.,!?:])([a-zA-Z0-9])', r'\1 \2', text)
-
-    # 3. Bersihkan token URL/ID panjang khas dataset
-    text = re.sub(r'#?URL[_\s]*[a-zA-Z0-9]{15,}#?', ' ', text, flags=re.IGNORECASE)
-    text = re.sub(r'[a-zA-Z0-9]{15,}', ' ', text)
-
-    # 4. Hapus URL standar dan Email
     text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\S+@\S+', '', text)
-
-    # 5. Buang special character tersisa (termasuk bullet point •) & bersihkan spasi
     text = re.sub(r"[^a-zA-Z0-9\s.,!?:']", ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
+    return re.sub(r'\s+', ' ', text).strip().lower()
 
-    return text.lower()
-
-# Load Assets
-print(f"--- RUNNING ON DEVICE: {DEVICE} ---")
+print(f"Loading Model Asset on Device: {DEVICE}")
 model, tokenizer = get_assets(MODEL_PATH, MODEL_NAME, DEVICE)
-df_test = pd.read_csv(CSV_PATH)
 
-print("--- CALCULATING DYNAMIC FIELD STATISTICS FROM CSV ---")
-FIELD_STATS = calculate_dynamic_stats(df_test)
-print("Dynamic Stats Result:", FIELD_STATS)
+df_train = pd.read_csv(TRAIN_CSV_PATH)
+df_test  = pd.read_csv(TEST_CSV_PATH)
 
-text_cols = list(FIELD_MAPPING.keys())
+# Statistik panjang teks tetap dari data latih (label=0 / legit)
+FIELD_STATS = calculate_dynamic_stats(df_train)
+text_cols   = list(FIELD_MAPPING.keys())
 
-# Ambil background data dan bersihkan dengan clean_text agar sejalan saat kalkulasi SHAP
-print("--- PREPROCESSING BACKGROUND DATA FOR SHAP ---")
-bg_data = df_test[text_cols].sample(64, random_state=42).copy()
+print("Preprocessing Background Data for SHAP (dari data TRAIN, label=0)...")
+# PERUBAHAN: Background SHAP diambil dari data LATIH yang valid (fraudulent=0)
+# agar baseline ekspektasi model merepresentasikan distribusi lowongan asli,
+# konsisten dengan praktik standar Shapley value.
+label_col  = 'fraudulent' if 'fraudulent' in df_train.columns else 'label'
+df_train_legit = df_train[df_train[label_col] == 0]
+
+bg_data = df_train_legit[text_cols].sample(40, random_state=42).copy().reset_index(drop=True)
 for col in text_cols:
     bg_data[col] = bg_data[col].astype(str).apply(clean_text)
 
 def predict_fn(input_data):
+    """
+    Wrapper fungsi prediksi probability-space untuk SHAP KernelExplainer.
+    Menerima DataFrame atau ndarray, mengembalikan array prob kelas Fraud (indeks 1).
+    """
     if isinstance(input_data, np.ndarray):
         input_df = pd.DataFrame(input_data, columns=text_cols)
     else:
         input_df = input_data.copy()
-    
-    batch_size = 48
+
     all_probs = []
-    
     model.eval()
+
     with torch.no_grad():
-        for i in range(0, len(input_df), batch_size):
-            batch_df = input_df.iloc[i : i + batch_size]
-            
-            def enc(texts, key):
+        for i in range(0, len(input_df), 50):
+            batch_df = input_df.iloc[i : i + 50]
+
+            def enc(texts, max_l):
                 return tokenizer(
-                    texts.astype(str).tolist(), 
-                    max_length=MAX_LENS[key], 
-                    padding='max_length', 
-                    truncation=True, 
+                    texts.astype(str).tolist(),
+                    max_length=max_l,
+                    padding='max_length',
+                    truncation=True,
                     return_tensors='pt'
                 ).to(DEVICE)
 
-            t = enc(batch_df['title_id'], 'title_id')
-            p = enc(batch_df['company_profile_id'], 'company_profile_id')
-            d = enc(batch_df['description_id'], 'description_id')
-            r = enc(batch_df['requirements_id'], 'requirements_id')
-            b = enc(batch_df['benefits_id'], 'benefits_id')
+            t = enc(batch_df['title_id'],          16)
+            p = enc(batch_df['company_profile_id'], 256)
+            d = enc(batch_df['description_id'],     512)
+            r = enc(batch_df['requirements_id'],    256)
+            b = enc(batch_df['benefits_id'],        150)
 
-            with torch.amp.autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu'):
-                logits = model(
-                    t['input_ids'], t['attention_mask'], 
-                    p['input_ids'], p['attention_mask'], 
-                    d['input_ids'], d['attention_mask'], 
-                    r['input_ids'], r['attention_mask'], 
-                    b['input_ids'], b['attention_mask']
-                )
-                probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
-                all_probs.extend(probs)
-            
+            logits = model(
+                t['input_ids'], t['attention_mask'],
+                p['input_ids'], p['attention_mask'],
+                d['input_ids'], d['attention_mask'],
+                r['input_ids'], r['attention_mask'],
+                b['input_ids'], b['attention_mask']
+            )
+
+            probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
+            all_probs.extend(probs)
+
             del t, p, d, r, b, logits
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
 
     return np.array(all_probs)
 
-print("--- INITIALIZING SHAP EXPLAINER ---")
+print("⚙️ Initializing SHAP KernelExplainer (baseline = Train legit)...")
 explainer = shap.KernelExplainer(predict_fn, bg_data)
 
 class JobInput(BaseModel):
-    title_id: str
+    title_id:           str
     company_profile_id: str
-    description_id: str
-    requirements_id: str
-    benefits_id: str
+    description_id:     str
+    requirements_id:    str
+    benefits_id:        str
 
 @app.post("/predict")
 async def predict(data: JobInput):
     try:
-        # 1. Jalankan proses cleaning data utama
         cleaned_list = [
             clean_text(data.title_id),
             clean_text(data.company_profile_id),
             clean_text(data.description_id),
             clean_text(data.requirements_id),
-            clean_text(data.benefits_id)
+            clean_text(data.benefits_id),
         ]
-        cleaned_row = pd.DataFrame([cleaned_list], columns=text_cols)
-        
-        # Buat dictionary murni versi CLEANED untuk kebutuhan Integrated Gradients (IG)
-        cleaned_job_dict = {
-            'title_id': cleaned_list[0],
-            'company_profile_id': cleaned_list[1],
-            'description_id': cleaned_list[2],
-            'requirements_id': cleaned_list[3],
-            'benefits_id': cleaned_list[4]
-        }
-        
-        # Prediction & SHAP menggunakan data cleaned
+        cleaned_row     = pd.DataFrame([cleaned_list], columns=text_cols)
+        cleaned_job_dict = {text_cols[i]: cleaned_list[i] for i in range(len(text_cols))}
+
+        # Prediksi probabilitas
         prob = float(predict_fn(cleaned_row)[0])
-        shap_values = explainer.shap_values(cleaned_row, nsamples=32).flatten()
-        
-        # 2. Diagnostic Engine
+
+        # Hitung SHAP — 5 fitur → 2^5=32 coalition, nsamples=32 sudah exhaustive
+        raw_shap   = explainer.shap_values(cleaned_row, nsamples=50)
+        shap_values = raw_shap[1].flatten() if isinstance(raw_shap, list) else raw_shap.flatten()
+
+        # Interpretasi via XAI Engine
         engine = XAIDiagnosticEngine(FIELD_STATS)
-        findings = []
-        highlights = {}
-        legit_like_fields = 0
-        
-        for i, feat in enumerate(text_cols):
-            shap_val = float(shap_values[i])
-            text_cleaned_content = str(cleaned_list[i])
+        findings, highlights = engine.analyze(
+            row_cleaned_dict=cleaned_job_dict,
+            current_shap=shap_values,
+            model=model,
+            tokenizer=tokenizer,
+            device=DEVICE
+        )
+
+        # Fallback teks mentah jika token highlighting kosong
+        for feat in text_cols:
             clean_name = FIELD_MAPPING[feat]
-            influence = engine.get_influence_label(shap_val)
-            
-            # [LOGIC: EMPTY FIELD]
-            if text_cleaned_content.lower() in ['', 'nan', 'none']:
-                if shap_val > 0.02:
-                    findings.append(f"Bagian '{clean_name}' tidak memiliki konten. Dalam prediksi model, kondisi ini teridentifikasi berkontribusi terhadap peningkatan probabilitas fraud (Pengaruh {influence}).")
-                continue
+            if clean_name not in highlights and cleaned_job_dict[feat] != "":
+                highlights[clean_name] = getattr(data, feat)
 
-            # [LOGIC: POSITIVE CONTRIBUTION]
-            if shap_val > 0.05:
-                context = engine.get_length_context(feat, len(text_cleaned_content))
-                findings.append(f"Model mendeteksi bagian '{clean_name}' berkontribusi terhadap peningkatan probabilitas fraud dengan pengaruh {influence}. Panjang teks {context}.")
-                
-                # ── [PERBAIKAN] SAFE FALLBACK HANDLING UNTUK INTEGRATED GRADIENTS ──
-                try:
-                    highlights_html = get_model_based_highlights_html(model, tokenizer, cleaned_job_dict, feat, DEVICE)
-                    # Jika xai_engine gagal mencocokkan string atau return kosong, fallback ke teks bersih biasa
-                    highlights[feat] = highlights_html if highlights_html else text_cleaned_content
-                except Exception as e:
-                    print(f"⚠️ Gagal memproses Integrated Gradients pada field {feat}: {e}")
-                    highlights[feat] = text_cleaned_content
-            
-            # [LOGIC: NEGATIVE CONTRIBUTION]
-            elif shap_val < -0.05:
-                legit_like_fields += 1
-                findings.append(f"Model mendeteksi bagian '{clean_name}' berkontribusi dalam menurunkan probabilitas fraud dengan pengaruh {influence}. Pola teks pada field ini memiliki kemiripan dengan pola yang lebih sering muncul pada lowongan legitimate di data pelatihan.")
-                if feat in ['description_id', 'requirements_id']:
-                    findings.append(f"Konten pada field '{clean_name}' terdeteksi memiliki pola teks yang dalam proses pelatihan model lebih sering diasosiasikan dengan lowongan legitimate.")
-
-        if legit_like_fields >= 3:
-            findings.append("Beberapa field teridentifikasi memberikan kontribusi dalam menurunkan probabilitas fraud, dengan pola yang relatif konsisten terhadap lowongan legitimate pada data pelatihan model.")
+        # Ambil expected_value kelas fraud (indeks 1) secara aman
+        ev = explainer.expected_value
+        base_value = float(ev[1] if isinstance(ev, (list, np.ndarray)) else ev)
 
         return {
-            "prediction": "FRAUD" if prob > 0.5 else "LEGIT",
+            "prediction":  "FRAUD" if prob > 0.5 else "LEGIT",
             "probability": prob,
-            "base_value": float(explainer.expected_value[0] if isinstance(explainer.expected_value, (list, np.ndarray)) else explainer.expected_value),
-            "shap_data": [{"label": FIELD_MAPPING[f], "value": float(shap_values[i])} for i, f in enumerate(text_cols)],
-            "findings": findings,
-            "highlights": highlights
+            "base_value":  base_value,
+            "shap_data":   [
+                {"label": FIELD_MAPPING[f], "value": float(shap_values[i])}
+                for i, f in enumerate(text_cols)
+            ],
+            "findings":    findings,
+            "highlights":  highlights,
         }
+
     except Exception as e:
         import traceback
         traceback.print_exc()
