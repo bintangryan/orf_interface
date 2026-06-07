@@ -18,8 +18,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ── KONFIGURASI PATH ASSET TEXT-ONLY ──
-MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\MODEL_BY_FIELD\\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY (1).pth"
+MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\MODEL_BY_FIELD\\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth"
 MODEL_NAME = "indobenchmark/indobert-base-p2"
+
+print(f"Loading Model Asset on Device: {DEVICE}")
+model, tokenizer = get_assets(MODEL_PATH, MODEL_NAME, DEVICE)
 
 TRAIN_CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\train_40.csv"
 TEST_CSV_PATH  = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\test_20f.csv"
@@ -33,9 +36,6 @@ def clean_text(text):
     text = re.sub(r"[^a-zA-Z0-9\s.,!?:']", ' ', text)
     return re.sub(r'\s+', ' ', text).strip().lower()
 
-print(f"Loading Model Asset on Device: {DEVICE}")
-model, tokenizer = get_assets(MODEL_PATH, MODEL_NAME, DEVICE)
-
 df_train = pd.read_csv(TRAIN_CSV_PATH)
 df_test  = pd.read_csv(TEST_CSV_PATH)
 
@@ -44,9 +44,7 @@ FIELD_STATS = calculate_dynamic_stats(df_train)
 text_cols   = list(FIELD_MAPPING.keys())
 
 print("Preprocessing Background Data for SHAP (dari data TRAIN, label=0)...")
-# PERUBAHAN: Background SHAP diambil dari data LATIH yang valid (fraudulent=0)
-# agar baseline ekspektasi model merepresentasikan distribusi lowongan asli,
-# konsisten dengan praktik standar Shapley value.
+
 label_col  = 'fraudulent' if 'fraudulent' in df_train.columns else 'label'
 df_train_legit = df_train[df_train[label_col] == 0]
 
@@ -55,10 +53,6 @@ for col in text_cols:
     bg_data[col] = bg_data[col].astype(str).apply(clean_text)
 
 def predict_fn(input_data):
-    """
-    Wrapper fungsi prediksi probability-space untuk SHAP KernelExplainer.
-    Menerima DataFrame atau ndarray, mengembalikan array prob kelas Fraud (indeks 1).
-    """
     if isinstance(input_data, np.ndarray):
         input_df = pd.DataFrame(input_data, columns=text_cols)
     else:
@@ -101,15 +95,15 @@ def predict_fn(input_data):
 
     return np.array(all_probs)
 
-print("⚙️ Initializing SHAP KernelExplainer (baseline = Train legit)...")
-explainer = shap.KernelExplainer(predict_fn, bg_data)
-
 class JobInput(BaseModel):
     title_id:           str
     company_profile_id: str
     description_id:     str
     requirements_id:    str
     benefits_id:        str
+
+print("⚙️ Initializing SHAP KernelExplainer (baseline = Train legit)...")
+explainer = shap.KernelExplainer(predict_fn, bg_data)
 
 @app.post("/predict")
 async def predict(data: JobInput):

@@ -38,17 +38,13 @@ class MainModelTextOnly(nn.Module):
         attn_output, _ = self.attention_layer(text_embeddings, text_embeddings, text_embeddings)
         text_features = attn_output.reshape(attn_output.shape[0], -1) 
 
+        # Melewatkan output fitur ke classifier agar menghasilkan logits berdimensi 2 (Normal vs Fraud)
         return self.classifier_text_only(text_features)
 
 def get_assets(path, model_name, device):
-    """
-    Asset Loader Utama khusus untuk Model Text-Only
-    """
     model = MainModelTextOnly(model_name).to(device)
     
-    # UBAH strict=True MENJADI strict=False
-    # Ini akan memuat bobot BERT, Attention, dan classifier_text_only dengan sempurna,
-    # serta otomatis membuang/mengabaikan layer fusion yang tersisa di file .pth
+    # strict=False otomatis mengabaikan layer fusion metadata yang tidak dipakai di web app
     model.load_state_dict(torch.load(path, map_location=device), strict=False)
     
     model.eval()

@@ -728,7 +728,7 @@ export default function ORFPage() {
                                 <div className="space-y-2 pt-2">
                                   <div className="flex items-center gap-1.5 text-slate-500">
                                     <AlertCircle size={13} className="text-amber-500" />
-                                    <span className="text-[11px] font-bold uppercase tracking-wider">TEMUAN DIAGNOSTIK</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">TEMUAN</span>
                                   </div>
                                   <div className="space-y-2">
                                     {matchedFindings.map((finding, fIdx) => (
@@ -753,7 +753,7 @@ export default function ORFPage() {
                                 <div className="space-y-2 pt-1">
                                   <div className="flex items-center gap-1.5 text-slate-500">
                                     <FileText size={13} className="text-blue-500" />
-                                    <span className="text-[11px] font-bold uppercase tracking-wider">Contextual Token Highlighting (Integrated Gradients)</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Text Highlighting </span>
                                   </div>
                                   <div 
                                     className="p-4 bg-slate-50 border border-slate-100 rounded-xl text-[12px] font-medium leading-7 text-slate-700 break-words"
