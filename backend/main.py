@@ -18,14 +18,14 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ── KONFIGURASI PATH ASSET TEXT-ONLY ──
-MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\MODEL_BY_FIELD\\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth"
+MODEL_PATH = "C:\its\TUGAS AKHIR\INTERFACE\orf-system\MODEL_BY_FIELD\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth"
 MODEL_NAME = "indobenchmark/indobert-base-p2"
 
 print(f"Loading Model Asset on Device: {DEVICE}")
 model, tokenizer = get_assets(MODEL_PATH, MODEL_NAME, DEVICE)
 
-TRAIN_CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\train_40.csv"
-TEST_CSV_PATH  = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\models\\test_20f.csv"
+TRAIN_CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\dataset\\train_20.csv"
+TEST_CSV_PATH  = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\dataset\\test_20f.csv"
 
 def clean_text(text):
     if pd.isna(text) or text == "" or not isinstance(text, str): return ""
@@ -53,10 +53,12 @@ for col in text_cols:
     bg_data[col] = bg_data[col].astype(str).apply(clean_text)
 
 def predict_fn(input_data):
+    # 1. Pastikan input SEBELUMNYA selalu dikonversi menjadi DataFrame dengan kolom yang benar
     if isinstance(input_data, np.ndarray):
-        input_df = pd.DataFrame(input_data, columns=text_cols)
+        # SHAP sering mengirimkan matriks 2D, konversi paksa ke string demi keamanan teks
+        input_df = pd.DataFrame(input_data, columns=text_cols).astype(str)
     else:
-        input_df = input_data.copy()
+        input_df = input_data.copy().astype(str)
 
     all_probs = []
     model.eval()
@@ -65,15 +67,18 @@ def predict_fn(input_data):
         for i in range(0, len(input_df), 50):
             batch_df = input_df.iloc[i : i + 50]
 
-            def enc(texts, max_l):
+            def enc(texts_series, max_l):
+                # Ubah series menjadi list of string murni yang bersih
+                texts_list = [str(x) for x in texts_series.cpu().values] if hasattr(texts_series, 'cpu') else [str(x) for x in texts_series.tolist()]
                 return tokenizer(
-                    texts.astype(str).tolist(),
+                    texts_list,
                     max_length=max_l,
                     padding='max_length',
                     truncation=True,
                     return_tensors='pt'
                 ).to(DEVICE)
 
+            # Ekstraksi menggunakan list string murni untuk menghindari bug internal pandas series di torch/transformers
             t = enc(batch_df['title_id'],          16)
             p = enc(batch_df['company_profile_id'], 256)
             d = enc(batch_df['description_id'],     512)
@@ -88,6 +93,7 @@ def predict_fn(input_data):
                 b['input_ids'], b['attention_mask']
             )
 
+            # Gunakan penanganan dimensi yang aman untuk probabilitas fraud (index 1)
             probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
             all_probs.extend(probs)
 

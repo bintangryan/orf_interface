@@ -42,7 +42,6 @@ class XAIDiagnosticEngine:
         self.stats = field_statistics
 
     def get_risk_label(self, val):
-        """Konversi SHAP value ke label risiko yang mudah dipahami pengguna."""
         abs_val = abs(val)
         if abs_val <= 0.02:   return "Sangat Rendah"
         elif abs_val <= 0.10: return "Rendah"
@@ -62,7 +61,6 @@ class XAIDiagnosticEngine:
         return None  # Normal, tidak perlu disebutkan
 
     def _length_note(self, length_flag, clean_name):
-        """Menghasilkan kalimat tambahan anomali panjang teks jika ada."""
         if length_flag == "terlalu singkat":
             return f" Isi {clean_name} tergolong sangat singkat dibanding lowongan kerja pada umumnya."
         elif length_flag == "tidak wajar panjangnya":
@@ -74,7 +72,7 @@ class XAIDiagnosticEngine:
         field_highlights = {}
         text_cols = list(FIELD_MAPPING.keys())
 
-        # RULE: Banyak field kosong — cek sebelum loop per-field
+        # RULE: Banyak field kosong 
         empty_fields = [
             FIELD_MAPPING[feat] for feat in text_cols
             if str(row_cleaned_dict.get(feat, "")).strip().lower() in ['', 'nan', 'none']
@@ -131,10 +129,6 @@ class XAIDiagnosticEngine:
 
 
 def get_model_based_highlights_html(model, tokenizer, full_input_dict, field_key, device, steps=24, threshold=0.04):
-    """
-    Integrated Gradients pada level Word Embedding dengan baseline teks kosong.
-    Menghasilkan HTML dengan highlight merah pada token yang paling mempengaruhi prediksi fraud.
-    """
     target_text = full_input_dict.get(field_key, "")
     if not target_text or str(target_text).lower() in ['nan', 'none', '']: return ""
 
