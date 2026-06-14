@@ -127,13 +127,13 @@ async def predict(data: JobInput):
         # Prediksi probabilitas
         prob = float(predict_fn(cleaned_row)[0])
 
-        # Hitung SHAP — 5 fitur → 2^5=32 coalition, nsamples=32 sudah exhaustive
+        # Hitung SHAP — 5 fitur 
         raw_shap   = explainer.shap_values(cleaned_row, nsamples=50)
         shap_values = raw_shap[1].flatten() if isinstance(raw_shap, list) else raw_shap.flatten()
 
         # Interpretasi via XAI Engine
         engine = XAIDiagnosticEngine(FIELD_STATS)
-        findings, highlights = engine.analyze(
+        findings, highlights, empty_warning_msg = engine.analyze(
             row_cleaned_dict=cleaned_job_dict,
             current_shap=shap_values,
             model=model,
@@ -161,6 +161,7 @@ async def predict(data: JobInput):
             ],
             "findings":    findings,
             "highlights":  highlights,
+            "empty_warning_msg": empty_warning_msg, # Ditambahkan ke response payload
         }
 
     except Exception as e:

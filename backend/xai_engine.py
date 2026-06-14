@@ -71,6 +71,7 @@ class XAIDiagnosticEngine:
         findings = []
         field_highlights = {}
         text_cols = list(FIELD_MAPPING.keys())
+        empty_warning_msg = None
 
         # RULE: Banyak field kosong 
         empty_fields = [
@@ -79,8 +80,9 @@ class XAIDiagnosticEngine:
         ]
         if len(empty_fields) >= 3:
             field_list = ", ".join(empty_fields)
-            findings.append(
-                f"Lowongan ini hanya mengisi sedikit informasi — sebanyak {len(empty_fields)} dari 5 bagian "
+            # KALIMAT INI HANYA MASUK KE VARIABEL TERSENDIRI, SUDAH TIDAK ADA FINDINGS.APPEND()
+            empty_warning_msg = (
+                f"Lowongan ini kurang informatif — sebanyak {len(empty_fields)} dari 5 bagian "
                 f"tidak diisi ({field_list}). Lowongan kerja resmi umumnya mencantumkan informasi yang lengkap."
             )
 
@@ -125,7 +127,7 @@ class XAIDiagnosticEngine:
                     f"Tingkat kepercayaan: {risk_label}."
                 )
 
-        return findings, field_highlights
+        return findings, field_highlights, empty_warning_msg
 
 
 def get_model_based_highlights_html(model, tokenizer, full_input_dict, field_key, device, steps=24, threshold=0.04):

@@ -33,6 +33,7 @@ interface PredictionResult {
   shap_data: ShapDataItem[];
   findings: string[];
   highlights: Record<string, string>;
+  empty_warning_msg?: string | null;
 }
 
 // ── Design tokens ──────────────────────────────────────────────────────────
@@ -42,32 +43,39 @@ const FRAUD_COLOR = "#BD114A";
 const LEGIT_COLOR = "#1E7D6A";
 const ease = "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]";
 
-// PENYESUAIAN ILMIAH: Deteksi Fitur Dominan Berbasis Ambang Batas Kontribusi Absolut (Absolute Share Metrics)
 const detectShapAnomalies = (shapData: ShapDataItem[]) => {
-  if (!shapData || shapData.length === 0) return null;
+  if (!shapData || shapData.length < 2) return null;
 
-  const totalAbsoluteMagnitude = shapData.reduce(
-    (sum, item) => sum + Math.abs(item.value),
-    0
+  const absValues = shapData.map((item) => Math.abs(item.value));
+
+  const mean = absValues.reduce((sum, v) => sum + v, 0) / absValues.length;
+  const std = Math.sqrt(
+    absValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / absValues.length
   );
-  if (totalAbsoluteMagnitude === 0) return null;
+
+  if (std < 0.01) return null;
+
+  let dominantItem: ShapDataItem | null = null;
+  let highestZ = 0;
 
   for (const item of shapData) {
-    const share = Math.abs(item.value) / totalAbsoluteMagnitude;
-    
-    // Jika kontribusi fitur tunggal mendominasi lebih dari 40% dari total bobot eksplanasi makro
-    if (share > 0.40 && Math.abs(item.value) > 0.10) {
-      return {
-        label: item.label,
-        value: item.value,
-        distance: totalAbsoluteMagnitude, // fallback penyelarasan variabel template awal
-        share: share * 100,
-        type: item.value < 0 ? "negatif" : "positif"
-      };
+    const absVal = Math.abs(item.value);
+    const z = (absVal - mean) / std;
+
+    if (z > 1.5 && absVal > mean && absVal > 0.08 && z > highestZ) {
+      dominantItem = item;
+      highestZ = z;
     }
   }
 
-  return null;
+  if (!dominantItem) return null;
+
+  return {
+    label: dominantItem.label,
+    value: dominantItem.value,
+    zScore: highestZ,
+    type: dominantItem.value < 0 ? "negatif" : "positif",
+  };
 };
 
 export default function ORFPage() {
@@ -109,7 +117,6 @@ export default function ORFPage() {
     }
   }, [activeTab]);
 
-  // PENYESUAIAN KUNCI: Dipetakan agar sinkron dengan data struktur internal baru
   const tabs: { id: FieldKey; label: string; placeholder: string; backendKey: string }[] = [
     { id: "title", label: "Posisi", placeholder: "Contoh: Staff Data Entry, Marketing Manager...", backendKey: "title_id" },
     { id: "profile", label: "Profil Perusahaan", placeholder: "Tempel deskripsi perusahaan di sini...", backendKey: "company_profile_id" },
@@ -148,7 +155,6 @@ export default function ORFPage() {
   const isFraud = result?.prediction === "FRAUD";
   const shapAnomaly = result ? detectShapAnomalies(result.shap_data) : null;
 
-  // ── Landing View ───────────────────────────────────────────────────────────
   if (!started) {
     const cardConfig = {
       fraud: {
@@ -161,7 +167,7 @@ export default function ORFPage() {
         icon: <ShieldAlert size={20} strokeWidth={2.5} style={{ color: FRAUD_COLOR }} />,
         miniShap: [
           { label: "Deskripsi Pekerjaan", val: "+0.421", w: "70%", pos: true },
-          { label: "Benefit", val: "+0.280", w: "45%", pos: true }, // Diselaraskan stringnya
+          { label: "Benefit", val: "+0.280", w: "45%", pos: true },
         ],
       },
       valid: {
@@ -368,7 +374,6 @@ export default function ORFPage() {
     );
   }
 
-  // ── Workspace View ─────────────────────────────────────────────────────────
   return (
     <main className="h-screen flex flex-col bg-slate-100 overflow-hidden font-sans">
       <header className="flex-shrink-0 h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 z-50 shadow-sm">
@@ -394,7 +399,6 @@ export default function ORFPage() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        {/* ── LEFT PANEL ── */}
         <div className="w-full max-w-[400px] xl:max-w-[480px] flex-shrink-0 flex flex-col bg-white border-r border-slate-200/80 overflow-hidden">
           <div className="flex-shrink-0 px-5 py-4 border-b border-slate-100 bg-slate-50/50">
             <div className="flex items-center justify-between">
@@ -488,7 +492,6 @@ export default function ORFPage() {
           </div>
         </div>
 
-        {/* ── RIGHT PANEL ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           {!result && !loading && (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -519,11 +522,9 @@ export default function ORFPage() {
             </div>
           )}
 
-          {/* Hasil Single-View Terpadu */}
           {result && !loading && (
             <div className="absolute inset-0 flex flex-col bg-slate-50 overflow-y-auto">
               
-              {/* Verdict Banner Sticky */}
               <div className={`sticky top-0 z-10 flex-shrink-0 px-6 lg:px-8 py-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b shadow-md ${
                 isFraud ? "border-red-600/30 shadow-red-600/5" : "border-emerald-600/30 shadow-emerald-600/5"
               }`}>
@@ -553,10 +554,8 @@ export default function ORFPage() {
                 </div>
               </div>
 
-              {/* Panel Hasil Utama */}
               <div className="max-w-4xl mx-auto w-full p-4 lg:p-6 space-y-6">
                 
-                {/* Meter Progress Bar Probabilitas */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
                   <p className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mb-4">Tingkat Risiko Lowongan</p>
                   <div className="flex items-baseline gap-1.5 mb-4">
@@ -588,7 +587,6 @@ export default function ORFPage() {
                   </div>
                 </div>
 
-                {/* Card Outlier Dominan */}
                 {shapAnomaly && (
                   <div className="bg-amber-50 rounded-2xl border border-amber-200/80 p-5 shadow-sm flex items-start gap-4 animate-fade-in">
                     <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
@@ -612,7 +610,22 @@ export default function ORFPage() {
                   </div>
                 )}
 
-                {/* List SHAP Chart Berbasis Nilai SHAP Asli Desimal */}
+                {result.empty_warning_msg && (
+                  <div className="bg-red-50 rounded-2xl border border-red-200/80 p-5 shadow-sm flex items-start gap-4 animate-fade-in">
+                    <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                      <AlertCircle size={20} className="text-red-600" strokeWidth={2.5} />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-[14px] font-bold text-red-900 tracking-tight">
+                        Peringatan: Informasi Tidak Lengkap
+                      </h4>
+                      <p className="text-[12px] text-red-700 mt-1 leading-relaxed font-medium">
+                        {result.empty_warning_msg}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-white rounded-2xl border border-slate-200/80 p-5 lg:p-6 shadow-sm">
                   <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
                     <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
@@ -624,7 +637,6 @@ export default function ORFPage() {
                     </div>
                   </div>
 
-                  {/* Keterangan warna bar di bagian atas */}
                   <div className="mb-6 flex flex-wrap items-center gap-6 bg-slate-50/80 p-3 rounded-xl border border-slate-100">
                     <div className="flex items-center gap-2">
                       <div className="w-3.5 h-2 rounded-full" style={{ backgroundColor: FRAUD_COLOR }} />
@@ -633,10 +645,6 @@ export default function ORFPage() {
                     <div className="flex items-center gap-2">
                       <div className="w-3.5 h-2 rounded-full" style={{ backgroundColor: LEGIT_COLOR }} />
                       <span className="text-[11px] font-bold text-slate-500">Menurunkan risiko fraud (Valid)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3.5 h-2 rounded-full" style={{ backgroundColor: BLUE }} />
-                      <span className="text-[11px] font-bold text-slate-500">Kontribusi netral / minim pengaruh</span>
                     </div>
                   </div>
 
@@ -656,7 +664,6 @@ export default function ORFPage() {
                       else if (labelLower.includes("persyaratan") || labelLower.includes("requirements")) fieldKey = "requirements";
                       else if (labelLower.includes("benefit") || labelLower.includes("keuntungan") || labelLower.includes("benefits")) fieldKey = "benefits";
 
-                      // SINKRONISASI LOGIKAL TOTAL: Mengarahkan key extraction langsung pada string label bersih backend mapping
                       const localHighlightHtml = result.highlights ? result.highlights[item.label] : "";
 
                       const matchedFindings = result.findings?.filter(f => {
@@ -665,8 +672,9 @@ export default function ORFPage() {
 
                       const showTextHighlighting = item.value > 0.05;
                       const isLowInfluence = item.value >= -0.05 && item.value <= 0.05;
-                      const leftBarColor = isLowInfluence ? BLUE : LEGIT_COLOR;
-                      const rightBarColor = isLowInfluence ? BLUE : FRAUD_COLOR;
+
+                      const leftBarColor = LEGIT_COLOR;
+                      const rightBarColor = FRAUD_COLOR;
 
                       return (
                         <div 
@@ -675,10 +683,9 @@ export default function ORFPage() {
                             isExpanded ? "border-slate-300 bg-slate-50/40 shadow-sm" : "border-slate-100 bg-white hover:border-slate-200"
                           }`}
                         >
-                          {/* Header Bar Klik */}
                           <div 
                             onClick={() => toggleExpandShap(item.label)}
-                            className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none"
+                            className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer select-none hover:bg-slate-50/80 transition-colors group"
                           >
                             <div className="flex-1">
                               <div className="flex items-center justify-between mb-2">
@@ -691,16 +698,15 @@ export default function ORFPage() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[12px] font-bold tabular-nums" style={{ color: isLowInfluence ? BLUE : (isPos ? FRAUD_COLOR : LEGIT_COLOR) }}>
+                                  <span className="text-[12px] font-bold tabular-nums" style={{ color: isPos ? FRAUD_COLOR : LEGIT_COLOR }}>
                                     {item.value > 0 ? "+" : ""}{item.value.toFixed(3)}
                                   </span>
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 w-14 text-right">
-                                    {isLowInfluence ? "• netral" : (isPos ? "↑ fraud" : "↓ valid")}
+                                    {isPos ? "↑ fraud" : "↓ valid"}
                                   </span>
                                 </div>
                               </div>
 
-                              {/* Sumbu Tengah Sempurna Menggunakan basis-1/2 */}
                               <div className="w-full h-2.5 rounded-full bg-slate-100 flex overflow-hidden">
                                 <div className="basis-1/2 flex justify-end">
                                   {!isPos && <div className="h-full rounded-l-full" style={{ width: `${barWidth}%`, backgroundColor: leftBarColor }} />}
@@ -712,15 +718,22 @@ export default function ORFPage() {
                               </div>
                             </div>
 
-                            <div className="flex-shrink-0 self-end sm:self-center">
+                            <div 
+                              className={`flex items-center justify-center gap-1.5 w-28 h-8 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90 ${
+                                isExpanded 
+                                  ? "bg-slate-100 border-slate-200 text-slate-600" // Warna saat kebuka (Tutup)
+                                  : "text-white shadow-sm" // Warna saat tertutup (Lihat Analisis)
+                              }`}
+                              style={!isExpanded ? { backgroundColor: BLUE, borderColor: BLUE } : {}}
+                            >
+                              <span>{isExpanded ? "Tutup" : "Lihat Analisis"}</span>
                               <ChevronDown 
-                                size={16} 
-                                className={`text-slate-400 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} 
+                                size={14} 
+                                className={`transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} 
                               />
                             </div>
                           </div>
 
-                          {/* DROP-DOWN VIEW PANEL */}
                           {isExpanded && (
                             <div className="px-4 pb-4 pt-1 border-t border-slate-100 bg-white space-y-4">
                               
@@ -741,11 +754,13 @@ export default function ORFPage() {
                               ) : null}
 
                               {isLowInfluence && (
-                                <div className="p-3.5 bg-slate-50 border border-slate-200/60 rounded-xl text-[11.5px] text-slate-500 leading-relaxed font-medium flex items-start gap-2 pt-2">
-                                  <AlertCircle size={14} className="text-slate-400 flex-shrink-0 mt-0.5" style={{ color: BLUE }} />
-                                  <span>
-                                    Tidak ada temuan pendukung pada field ini. Nilai kontribusi fitur berada dalam rentang ambang batas netral model AI.
-                                  </span>
+                                <div className="pt-2">
+                                  <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-lg text-[12px] text-slate-500 leading-relaxed font-medium flex items-start gap-2">
+                                    <AlertCircle size={15} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                                    <span>
+                                      Tidak ada temuan pendukung pada field ini. Nilai kontribusi fitur berada dalam rentang ambang batas netral model AI.
+                                    </span>
+                                  </div>
                                 </div>
                               )}
 
@@ -753,7 +768,7 @@ export default function ORFPage() {
                                 <div className="space-y-2 pt-1">
                                   <div className="flex items-center gap-1.5 text-slate-500">
                                     <FileText size={13} className="text-blue-500" />
-                                    <span className="text-[11px] font-bold uppercase tracking-wider">Text Highlighting </span>
+                                    <span className="text-[11px] font-bold uppercase tracking-wider">Text Highlighting</span>
                                   </div>
                                   <div 
                                     className="p-4 bg-slate-50 border border-slate-100 rounded-xl text-[12px] font-medium leading-7 text-slate-700 break-words"
@@ -770,7 +785,6 @@ export default function ORFPage() {
                   </div>
                 </div>
 
-                {/* Temuan global tambahan (seperti baris Kepadatan Informasi) */}
                 {result.findings && result.findings.filter(f => f.includes("Distribusi") || f.includes("seimbang")).map((f, i) => (
                   <div key={i} className="bg-emerald-50 rounded-2xl border border-emerald-200 p-5 shadow-sm flex items-start gap-4 animate-fade-in">
                     <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
