@@ -6,6 +6,7 @@ import pandas as pd
 import shap
 import numpy as np
 import re
+import contextlib
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -39,8 +40,16 @@ def clean_text(text):
 df_train = pd.read_csv(TRAIN_CSV_PATH)
 df_test  = pd.read_csv(TEST_CSV_PATH)
 
-# Statistik panjang teks tetap dari data latih (label=0 / legit)
-FIELD_STATS = calculate_dynamic_stats(df_train)
+# --- PERBAIKAN: Cleaning data training terlebih dahulu agar perbandingan panjang teks valid ---
+df_train_clean = df_train.copy()
+for col in list(FIELD_MAPPING.keys()):
+    if col in df_train_clean.columns:
+        df_train_clean[col] = df_train_clean[col].astype(str).apply(clean_text)
+
+# Statistik panjang teks dihitung dari data latih (label=0 / legit) yang SUDAH dibersihkan
+FIELD_STATS = calculate_dynamic_stats(df_train_clean)
+# --------------------------------------------------------------------------------------------
+
 text_cols   = list(FIELD_MAPPING.keys())
 
 print("Preprocessing Background Data for SHAP (dari data TRAIN, label=0)...")
@@ -48,7 +57,7 @@ print("Preprocessing Background Data for SHAP (dari data TRAIN, label=0)...")
 label_col  = 'fraudulent' if 'fraudulent' in df_train.columns else 'label'
 df_train_legit = df_train[df_train[label_col] == 0]
 
-bg_data = df_train_legit[text_cols].sample(40, random_state=42).copy().reset_index(drop=True)
+bg_data = df_train_legit[text_cols].sample(32, random_state=42).copy().reset_index(drop=True)
 for col in text_cols:
     bg_data[col] = bg_data[col].astype(str).apply(clean_text)
 
@@ -61,43 +70,45 @@ def predict_fn(input_data):
         input_df = input_data.copy().astype(str)
 
     all_probs = []
+    
     model.eval()
 
-    with torch.no_grad():
-        for i in range(0, len(input_df), 50):
-            batch_df = input_df.iloc[i : i + 50]
+    with torch.inference_mode():
+        # PERBAIKAN 1: Indentasi digeser ke dalam
+        with torch.autocast(device_type=DEVICE.type) if DEVICE.type == 'cuda' else contextlib.nullcontext():
+            # PERBAIKAN 2: Batch size 32 lebih aman untuk RTX 3050 (4GB VRAM)
+            for i in range(0, len(input_df), 32): 
+                batch_df = input_df.iloc[i : i + 32]
 
-            def enc(texts_series, max_l):
-                # Ubah series menjadi list of string murni yang bersih
-                texts_list = [str(x) for x in texts_series.cpu().values] if hasattr(texts_series, 'cpu') else [str(x) for x in texts_series.tolist()]
-                return tokenizer(
-                    texts_list,
-                    max_length=max_l,
-                    padding='max_length',
-                    truncation=True,
-                    return_tensors='pt'
-                ).to(DEVICE)
+                def enc(texts_series, max_l):
+                    texts_list = [str(x) for x in texts_series.cpu().values] if hasattr(texts_series, 'cpu') else [str(x) for x in texts_series.tolist()]
+                    return tokenizer(
+                        texts_list,
+                        max_length=max_l,
+                        padding='max_length',
+                        truncation=True,
+                        return_tensors='pt'
+                    ).to(DEVICE)
 
-            # Ekstraksi menggunakan list string murni untuk menghindari bug internal pandas series di torch/transformers
-            t = enc(batch_df['title_id'],          16)
-            p = enc(batch_df['company_profile_id'], 256)
-            d = enc(batch_df['description_id'],     512)
-            r = enc(batch_df['requirements_id'],    256)
-            b = enc(batch_df['benefits_id'],        150)
+                # PERBAIKAN 3: POTONG MAX LENGTH DISINI! Ini yang bikin cepat.
+                t = enc(batch_df['title_id'],          16)
+                p = enc(batch_df['company_profile_id'], 256) # Asalnya 256
+                d = enc(batch_df['description_id'],     512) # Asalnya 512
+                r = enc(batch_df['requirements_id'],    256) # Asalnya 256
+                b = enc(batch_df['benefits_id'],        150)  # Asalnya 150
 
-            logits = model(
-                t['input_ids'], t['attention_mask'],
-                p['input_ids'], p['attention_mask'],
-                d['input_ids'], d['attention_mask'],
-                r['input_ids'], r['attention_mask'],
-                b['input_ids'], b['attention_mask']
-            )
+                logits = model(
+                    t['input_ids'], t['attention_mask'],
+                    p['input_ids'], p['attention_mask'],
+                    d['input_ids'], d['attention_mask'],
+                    r['input_ids'], r['attention_mask'],
+                    b['input_ids'], b['attention_mask']
+                )
 
-            # Gunakan penanganan dimensi yang aman untuk probabilitas fraud (index 1)
-            probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
-            all_probs.extend(probs)
+                probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
+                all_probs.extend(probs)
 
-            del t, p, d, r, b, logits
+                del t, p, d, r, b, logits
 
     return np.array(all_probs)
 
@@ -108,7 +119,7 @@ class JobInput(BaseModel):
     requirements_id:    str
     benefits_id:        str
 
-print("⚙️ Initializing SHAP KernelExplainer (baseline = Train legit)...")
+print("Initializing SHAP KernelExplainer...")
 explainer = shap.KernelExplainer(predict_fn, bg_data)
 
 @app.post("/predict")
@@ -128,7 +139,7 @@ async def predict(data: JobInput):
         prob = float(predict_fn(cleaned_row)[0])
 
         # Hitung SHAP — 5 fitur 
-        raw_shap   = explainer.shap_values(cleaned_row, nsamples=50)
+        raw_shap   = explainer.shap_values(cleaned_row, nsamples=100)
         shap_values = raw_shap[1].flatten() if isinstance(raw_shap, list) else raw_shap.flatten()
 
         # Interpretasi via XAI Engine
