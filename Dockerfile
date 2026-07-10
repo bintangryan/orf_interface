@@ -1,15 +1,14 @@
-# Gunakan image Python yang ringan
 FROM python:3.10-slim
 
-# Set direktori kerja di dalam container
 WORKDIR /app
 
-# Copy requirements dan install dependencies
-COPY requirements.txt .
+# Copy requirement dulu agar cache docker lebih efektif
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy seluruh file backend lu (termasuk model dan dataset)
-COPY . .
+# Copy seluruh folder backend ke dalam container
+COPY backend/ .
 
-# Jalankan server FastAPI menggunakan port standar Cloud Run (8080)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Jalankan aplikasi
+ENV PORT=8080
+CMD exec uvicorn main:app --host 0.0.0.0 --port $PORT
