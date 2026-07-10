@@ -6,6 +6,7 @@ import pandas as pd
 import shap
 import numpy as np
 import re
+import os
 import contextlib
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,20 +14,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from model_loader import get_assets
 from xai_engine import XAIDiagnosticEngine, FIELD_MAPPING, calculate_dynamic_stats
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Arahkan ke folder model dan dataset menggunakan relative path
+MODEL_PATH = os.path.join(BASE_DIR, "model", "model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth")
+TRAIN_CSV_PATH = os.path.join(BASE_DIR, "dataset", "train_20.csv")
+TEST_CSV_PATH  = os.path.join(BASE_DIR, "dataset", "test_20f.csv")
+
+MODEL_NAME = "indobenchmark/indobert-base-p2"
+
 app = FastAPI(title="Online Recruitment Fraud Diagnostic System API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ── KONFIGURASI PATH ASSET TEXT-ONLY ──
-MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\backend\\model\\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth"
-MODEL_NAME = "indobenchmark/indobert-base-p2"
+#MODEL_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\backend\\model\\model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth"
+#MODEL_NAME = "indobenchmark/indobert-base-p2"
 
 print(f"Loading Model Asset on Device: {DEVICE}")
 model, tokenizer = get_assets(MODEL_PATH, MODEL_NAME, DEVICE)
 
-TRAIN_CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\backend\\dataset\\train_20.csv"
-TEST_CSV_PATH  = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\backend\\dataset\\test_20f.csv"
+#TRAIN_CSV_PATH = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\backend\\dataset\\train_20.csv"
+#TEST_CSV_PATH  = "C:\\its\\TUGAS AKHIR\\INTERFACE\\orf-system\\backend\\dataset\\test_20f.csv"
 
 def clean_text(text):
     if pd.isna(text) or text == "" or not isinstance(text, str): return ""

@@ -137,11 +137,17 @@ export default function ORFPage() {
         requirements_id: formData.requirements,
         benefits_id: formData.benefits,
       };
-      const res = await axios.post("http://localhost:8000/predict", payload);
+      
+      // --- PERBAIKAN URL ---
+      // Ambil URL dari environment variable (Vercel), jika tidak ada gunakan localhost
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await axios.post(`${apiUrl}/predict`, payload);
+      // ---------------------
+
       setResult(res.data);
     } catch (error) {
       console.error(error);
-      alert("Koneksi ke backend gagal. Pastikan server berjalan di port 8000.");
+      alert("Koneksi ke backend gagal. Pastikan server berjalan di port 8000 atau URL sudah benar.");
     } finally {
       setLoading(false);
     }
