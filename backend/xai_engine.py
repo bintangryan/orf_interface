@@ -54,9 +54,9 @@ class XAIDiagnosticEngine:
             return None  # Tidak ada anomali panjang
 
         z_score = (current_len - stats['mean']) / stats['std']
-        if z_score < -1.96:
+        if z_score < -1.5:
             return "terlalu singkat"
-        elif z_score > 1.96:
+        elif z_score > 1.5:
             return "tidak wajar panjangnya"
         return None  # Normal, tidak perlu disebutkan
 
@@ -80,7 +80,6 @@ class XAIDiagnosticEngine:
         ]
         if len(empty_fields) >= 3:
             field_list = ", ".join(empty_fields)
-            # KALIMAT INI HANYA MASUK KE VARIABEL TERSENDIRI, SUDAH TIDAK ADA FINDINGS.APPEND()
             empty_warning_msg = (
                 f"Lowongan ini kurang informatif — sebanyak {len(empty_fields)} dari 5 bagian "
                 f"tidak diisi ({field_list}). Lowongan kerja resmi umumnya mencantumkan informasi yang lengkap."
@@ -93,7 +92,7 @@ class XAIDiagnosticEngine:
             text_content = str(row_cleaned_dict.get(feat, "")).strip()
             risk_label = self.get_risk_label(shap_val)
 
-            # 1. Field dikosongkan
+            # 1. PERBAIKAN: Pastikan ini tetap ada agar pesan "tidak diisi" muncul
             if text_content.lower() in ['', 'nan', 'none']:
                 if shap_val > 0.02:
                     findings.append(
@@ -101,16 +100,20 @@ class XAIDiagnosticEngine:
                         f"Lowongan yang tidak mencantumkan {clean_name} cenderung lebih berisiko — "
                         f"tingkat kecurigaan: {risk_label}."
                     )
-                continue
+                continue # Langsung lanjut ke field berikutnya agar tidak nabrak logika di bawah
 
+            # 2. Logika Length Note (tetap berjalan untuk field yang terisi)
             text_len = len(text_content)
             length_flag = self.get_length_context(feat, text_len)
             length_note = self._length_note(length_flag, clean_name)
+            
+            if length_flag and length_note:
+                findings.append(f"Catatan format:{length_note}")
 
-            # 2. Field mendorong prediksi fraud
+            # 3. Field mendorong prediksi fraud
             if shap_val > 0.05:
                 findings.append(
-                    f"Bagian {clean_name} terdeteksi memiliki pola yang mencurigakan.{length_note} "
+                    f"Bagian {clean_name} terdeteksi memiliki pola yang mencurigakan. "
                     f"Tingkat kecurigaan: {risk_label}."
                 )
                 try:
@@ -120,7 +123,7 @@ class XAIDiagnosticEngine:
                 except Exception:
                     field_highlights[clean_name] = text_content
 
-            # 3. Field mendukung keabsahan lowongan
+            # 4. Field mendukung keabsahan lowongan
             elif shap_val < -0.05:
                 findings.append(
                     f"Bagian {clean_name} tampak wajar dan mendukung keabsahan lowongan ini. "
@@ -146,7 +149,7 @@ def get_model_based_highlights_html(model, tokenizer, full_input_dict, field_key
     input_ids      = encoded['input_ids'].to(device)
     attention_mask = encoded['attention_mask'].to(device)
 
-    # Baseline: embedding dari teks kosong ([CLS][SEP][PAD]...)
+    # Baseline: embedding dari teks kosong ([CLS][SEP][PAD])
     encoded_baseline = tokenizer(
         "", return_tensors='pt', truncation=True,
         max_length=max_len, padding='max_length'
@@ -200,6 +203,12 @@ def get_model_based_highlights_html(model, tokenizer, full_input_dict, field_key
     avg_grads      = total_grads / steps
     ig_attribution = ((input_embeds - baseline_embeds) * avg_grads).sum(dim=-1).squeeze(0).cpu().numpy()
 
+    max_attr = np.max(np.abs(ig_attribution))
+    if max_attr > 1e-8:
+        ig_attribution = ig_attribution / max_attr 
+
+    adaptive_threshold = 0.15 
+
     html_output, last_idx = "", 0
     for idx, (start, end) in enumerate(offsets):
         if start == end:
@@ -209,8 +218,9 @@ def get_model_based_highlights_html(model, tokenizer, full_input_dict, field_key
         html_output += target_text[last_idx:start]
         token_text   = target_text[start:end]
 
-        if token_score > threshold:
-            opacity      = min(token_score * 2, 0.85)
+        # Evaluasi menggunakan adaptive_threshold
+        if token_score > adaptive_threshold:
+            opacity      = min(token_score * 0.8, 0.85)
             html_output += (
                 f"<span style='background-color: rgba(255,0,0,{opacity:.2f}); "
                 f"padding:2px 3px; border-radius:4px; font-weight:bold;'>{token_text}</span>"
