@@ -1,14 +1,20 @@
+# Pake image python 3.10 slim biar cepet
 FROM python:3.10-slim
 
+# Set working directory ke /app
 WORKDIR /app
 
-# Copy requirement dulu agar cache docker lebih efektif
+# Copy requirements.txt dari folder backend
 COPY backend/requirements.txt .
+
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy seluruh folder backend ke dalam container
+# Copy seluruh isi folder backend ke /app di dalam container
 COPY backend/ .
 
-# Jalankan aplikasi
-ENV PORT=8080
-CMD exec uvicorn main:app --host 0.0.0.0 --port $PORT
+# Expose port yang dipake FastAPI
+EXPOSE 8080
+
+# Jalankan uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
