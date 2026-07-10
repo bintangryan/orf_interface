@@ -1,7 +1,16 @@
-# .dockerignore
-frontend/
-.git/
 __pycache__/
 *.pyc
-.venv/
+*.pyo
+*.pyd
+
+.git
+.gitignore
+
+.vscode/
+.idea/
+
 .env
+
+README.md
+
+*.log
