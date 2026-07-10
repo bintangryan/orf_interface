@@ -43,9 +43,8 @@ class MainModelTextOnly(nn.Module):
 
 def get_assets(path, model_name, device):
     model = MainModelTextOnly(model_name).to(device)
-    
-    # strict=False otomatis mengabaikan layer fusion metadata yang tidak dipakai di web app
-    model.load_state_dict(torch.load(path, map_location=device), strict=False)
+    # Tambahkan parameter weights_only=False di dalam torch.load
+    model.load_state_dict(torch.load(path, map_location=device, weights_only=False), strict=False)
     
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_name)
