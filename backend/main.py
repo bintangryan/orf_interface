@@ -119,7 +119,7 @@ class JobInput(BaseModel):
     benefits_id:        str
 
 @app.post("/predict")
-async def predict(data: JobInput):
+def predict(data: JobInput):
     # Proteksi: Cegah akses jika model belum selesai di-load saat server baru menyala
     if explainer is None or model is None:
         raise HTTPException(status_code=503, detail="Sistem AI masih dalam proses pemuatan awal. Mohon tunggu beberapa detik dan coba lagi.")
