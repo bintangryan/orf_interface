@@ -140,7 +140,7 @@ export default function ORFPage() {
       
       // --- PERBAIKAN URL ---
       // Ambil URL dari environment variable (Vercel), jika tidak ada gunakan localhost
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
       const res = await axios.post(`${apiUrl}/predict`, payload);
       // ---------------------
 
