@@ -19,8 +19,8 @@ RUN rm -f model/model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth
 
 # 2. Download model asli pakai gdown. 
 # PENTING: GANTI tulisan ID_FILE_KAMU_DISINI dengan ID dari link Google Drive milikmu!
-RUN gdown --id 1c-LWVuSXTHvtIqmVuBxirp83fggR55j0 -O model/model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth
-
+# Ganti baris RUN gdown yang lama dengan ini (pakai link lengkap):
+RUN gdown "https://drive.google.com/file/d/1c-LWVuSXTHvtIqmVuBxirp83fggR55j0/view?usp=sharing" -O model/model_IndoBERT_Benchmark_S1_20_TEXT_ONLY.pth
 # Expose port yang dipake FastAPI
 EXPOSE 8080
 
