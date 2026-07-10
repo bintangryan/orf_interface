@@ -8,3 +8,4 @@ shap
 python-multipart
 scikit-learn
 tqdm
+beautifulsoup4==4.12.2
