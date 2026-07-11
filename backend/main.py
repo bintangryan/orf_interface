@@ -103,7 +103,7 @@ def load_ai_assets():
     label_col  = 'fraudulent' if 'fraudulent' in df_train.columns else 'label'
     df_train_legit = df_train[df_train[label_col] == 0]
 
-    bg_data = df_train_legit[text_cols].sample(32, random_state=42).copy().reset_index(drop=True)
+    bg_data = df_train_legit[text_cols].sample(10, random_state=42).copy().reset_index(drop=True)
     for col in text_cols:
         bg_data[col] = bg_data[col].astype(str).apply(clean_text)
 
@@ -136,7 +136,7 @@ def predict(data: JobInput):
         cleaned_job_dict = {text_cols[i]: cleaned_list[i] for i in range(len(text_cols))}
 
         prob = float(predict_fn(cleaned_row)[0])
-        raw_shap   = explainer.shap_values(cleaned_row, nsamples=100)
+        raw_shap   = explainer.shap_values(cleaned_row, nsamples=10)
         shap_values = raw_shap[1].flatten() if isinstance(raw_shap, list) else raw_shap.flatten()
 
         engine = XAIDiagnosticEngine(FIELD_STATS)
