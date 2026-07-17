@@ -61,7 +61,7 @@ def predict_fn(input_data):
                 def enc(texts_series, max_l):
                     texts_list = [str(x) for x in texts_series.cpu().values] if hasattr(texts_series, 'cpu') else [str(x) for x in texts_series.tolist()]
                     return tokenizer(
-                        texts_list, max_length=max_l, padding='max_length', truncation=True, return_tensors='pt'
+                        texts_list, max_length=max_l, padding=True, truncation=True, return_tensors='pt'
                     ).to(DEVICE)
 
                 t = enc(batch_df['title_id'],          16)
@@ -136,7 +136,7 @@ def predict(data: JobInput):
         cleaned_job_dict = {text_cols[i]: cleaned_list[i] for i in range(len(text_cols))}
 
         prob = float(predict_fn(cleaned_row)[0])
-        raw_shap   = explainer.shap_values(cleaned_row, nsamples=10)
+        raw_shap   = explainer.shap_values(cleaned_row, nsamples=32)
         shap_values = raw_shap[1].flatten() if isinstance(raw_shap, list) else raw_shap.flatten()
 
         engine = XAIDiagnosticEngine(FIELD_STATS)
