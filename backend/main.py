@@ -29,7 +29,6 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 text_cols = list(FIELD_MAPPING.keys())
 
 # --- DEKLARASI GLOBAL VARIABLE ---
-# Agar aset AI tidak diload berkali-kali setiap ada request prediksi
 model = None
 tokenizer = None
 explainer = None
@@ -84,7 +83,7 @@ def predict_fn(input_data):
 
     return np.array(all_probs)
 
-# --- STARTUP EVENT (RAHASIANYA ADA DI SINI) ---
+# --- STARTUP EVENT ---
 @app.on_event("startup")
 def load_ai_assets():
     global model, tokenizer, explainer, FIELD_STATS
@@ -120,7 +119,6 @@ class JobInput(BaseModel):
 
 @app.post("/predict")
 def predict(data: JobInput):
-    # Proteksi: Cegah akses jika model belum selesai di-load saat server baru menyala
     if explainer is None or model is None:
         raise HTTPException(status_code=503, detail="Sistem AI masih dalam proses pemuatan awal. Mohon tunggu beberapa detik dan coba lagi.")
         

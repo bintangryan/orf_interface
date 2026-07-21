@@ -51,14 +51,14 @@ class XAIDiagnosticEngine:
     def get_length_context(self, feat, current_len):
         stats = self.stats.get(feat)
         if not stats or stats['std'] == 0:
-            return None  # Tidak ada anomali panjang
+            return None 
 
         z_score = (current_len - stats['mean']) / stats['std']
         if z_score < -1.5:
             return "terlalu singkat"
         elif z_score > 1.5:
             return "tidak wajar panjangnya"
-        return None  # Normal, tidak perlu disebutkan
+        return None  
 
     def _length_note(self, length_flag, clean_name):
         if length_flag == "terlalu singkat":
@@ -92,7 +92,6 @@ class XAIDiagnosticEngine:
             text_content = str(row_cleaned_dict.get(feat, "")).strip()
             risk_label = self.get_risk_label(shap_val)
 
-            # 1. PERBAIKAN: Pastikan ini tetap ada agar pesan "tidak diisi" muncul
             if text_content.lower() in ['', 'nan', 'none']:
                 if shap_val > 0.02:
                     findings.append(
@@ -100,9 +99,8 @@ class XAIDiagnosticEngine:
                         f"Lowongan yang tidak mencantumkan {clean_name} cenderung lebih berisiko — "
                         f"tingkat kecurigaan: {risk_label}."
                     )
-                continue # Langsung lanjut ke field berikutnya agar tidak nabrak logika di bawah
+                continue 
 
-            # 2. Logika Length Note (tetap berjalan untuk field yang terisi)
             text_len = len(text_content)
             length_flag = self.get_length_context(feat, text_len)
             length_note = self._length_note(length_flag, clean_name)
@@ -110,7 +108,6 @@ class XAIDiagnosticEngine:
             if length_flag and length_note:
                 findings.append(f"Catatan format:{length_note}")
 
-            # 3. Field mendorong prediksi fraud
             if shap_val > 0.05:
                 findings.append(
                     f"Bagian {clean_name} terdeteksi memiliki pola yang mencurigakan. "
@@ -123,7 +120,6 @@ class XAIDiagnosticEngine:
                 except Exception:
                     field_highlights[clean_name] = text_content
 
-            # 4. Field mendukung keabsahan lowongan
             elif shap_val < -0.05:
                 findings.append(
                     f"Bagian {clean_name} tampak wajar dan mendukung keabsahan lowongan ini. "
@@ -160,7 +156,6 @@ def get_model_based_highlights_html(model, tokenizer, full_input_dict, field_key
         input_embeds    = model.bert.embeddings.word_embeddings(input_ids)
         baseline_embeds = model.bert.embeddings.word_embeddings(baseline_ids)
 
-    # Static context dari field lain (dijaga konstan selama loop IG)
     def get_field_cls(f_k):
         t = str(full_input_dict.get(f_k, ""))
         e = tokenizer(

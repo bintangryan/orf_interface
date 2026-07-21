@@ -9,12 +9,12 @@ class MainModelTextOnly(nn.Module):
         self.bert = AutoModel.from_pretrained(model_name)
         self.hidden_size = self.bert.config.hidden_size
 
-        # Cross-Field Attention khusus untuk 5 field teks
+        # Multihead Self-Attention khusus untuk 5 field teks
         self.attention_layer = nn.MultiheadAttention(embed_dim=self.hidden_size, num_heads=8, batch_first=True)
         
         self.dim_mode_text_only = (self.hidden_size * 5)
 
-        # Classifier tunggal untuk skenario Text-Only (Dropout sesuai parameter latih = 0.2)
+        # Classifier tunggal untuk skenario Text-Only 
         self.classifier_text_only = nn.Sequential(
             nn.Linear(self.dim_mode_text_only, 512), 
             nn.LayerNorm(512), 
@@ -24,7 +24,7 @@ class MainModelTextOnly(nn.Module):
         )
 
     def forward(self, t_ids, t_mask, p_ids, p_mask, d_ids, d_mask, r_ids, r_mask, b_ids, b_mask):
-        # Ekstraksi token [CLS] (indeks 0) dari masing-masing field teks
+        # Ekstraksi token [CLS] (indeks 0) dari masing-masing fitur teks
         o_t = self.bert(input_ids=t_ids, attention_mask=t_mask).last_hidden_state[:, 0, :].unsqueeze(1)
         o_p = self.bert(input_ids=p_ids, attention_mask=p_mask).last_hidden_state[:, 0, :].unsqueeze(1)
         o_d = self.bert(input_ids=d_ids, attention_mask=d_mask).last_hidden_state[:, 0, :].unsqueeze(1)
@@ -34,7 +34,7 @@ class MainModelTextOnly(nn.Module):
         # Gabungkan ke dimensi (batch_size, 5, hidden_size)
         text_embeddings = torch.cat((o_t, o_p, o_d, o_r, o_b), dim=1)
         
-        # Proses lewat Cross-Field Attention
+        # Proses lewat Multihead Self-Attention
         attn_output, _ = self.attention_layer(text_embeddings, text_embeddings, text_embeddings)
         text_features = attn_output.reshape(attn_output.shape[0], -1) 
 

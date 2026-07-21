@@ -16,8 +16,6 @@ import {
   FileText,
   ArrowLeft,
   Sparkles,
-  AlertTriangle,
-  FileSearchCorner,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
@@ -41,7 +39,6 @@ interface PredictionResult {
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const BLUE = "#3674B5";
-const BLUE_DARK = "#2D629A";
 const FRAUD_COLOR = "#BD114A";
 const LEGIT_COLOR = "#1E7D6A";
 const ease = "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]";
@@ -141,8 +138,7 @@ export default function ORFPage() {
         benefits_id: formData.benefits,
       };
       
-      // --- PERBAIKAN URL ---
-      // Ambil URL dari environment variable (Vercel), jika tidak ada gunakan localhost
+      // Ambil URL dari environment variable (Vercel)
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
       const res = await axios.post(`${apiUrl}/predict`, payload);
       // ---------------------
@@ -565,93 +561,89 @@ export default function ORFPage() {
 
               <div className="max-w-4xl mx-auto w-full p-4 lg:p-6 space-y-6">
                 <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
-  {/* Hapus gap-6 di sini jika jarak antara header dan bar dirasa terlalu jauh, 
-      karena headernya sudah punya padding-bottom (pb-4) */}
-  <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-6">
+                    {/* Header Hasil Deteksi */}
+                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                      <div
+                        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                          isFraud ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"
+                        }`}
+                      >
+                        {isFraud ? (
+                          <ShieldAlert size={18} className="text-red-600" strokeWidth={2.5} />
+                        ) : (
+                          <ShieldCheck size={18} className="text-emerald-600" strokeWidth={2.5} />
+                        )}
+                      </div>
 
-    {/* Header Hasil Deteksi */}
-    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-      <div
-        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
-          isFraud ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"
-        }`}
-      >
-        {/* Pastikan sudah import icon ini dari lucide-react */}
-        {isFraud ? (
-          <ShieldAlert size={18} className="text-red-600" strokeWidth={2.5} />
-        ) : (
-          <ShieldCheck size={18} className="text-emerald-600" strokeWidth={2.5} />
-        )}
-      </div>
+                      <div className="flex-1 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                          <h3 className="text-[15px] font-bold text-slate-800">
+                            Hasil Deteksi
+                          </h3>
+                          <p className="text-[12px] text-slate-400 mt-0.5">
+                            Tingkat probabilitas hasil klasifikasi model.
+                          </p>
+                        </div>
 
-      <div className="flex-1 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h3 className="text-[15px] font-bold text-slate-800">
-            Hasil Deteksi
-          </h3>
-          <p className="text-[12px] text-slate-400 mt-0.5">
-            Tingkat probabilitas hasil klasifikasi model.
-          </p>
-        </div>
+                        <span
+                          className={`inline-flex w-fit text-[11px] font-bold px-3 py-1 rounded-full border ${
+                            isFraud
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          }`}
+                        >
+                          {isFraud ? "Lowongan Terindikasi Fraud" : "Lowongan Terindikasi Valid"}
+                        </span>
+                      </div>
+                    </div>
 
-        <span
-          className={`inline-flex w-fit text-[11px] font-bold px-3 py-1 rounded-full border ${
-            isFraud
-              ? "bg-red-50 text-red-700 border-red-200"
-              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-          }`}
-        >
-          {isFraud ? "Lowongan Terindikasi Fraud" : "Lowongan Terindikasi Valid"}
-        </span>
-      </div>
-    </div>
+                    {/* Fraud */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[13px] font-bold text-slate-700">
+                          Probabilitas Fraud
+                        </span>
+                        <span className="text-[14px] font-bold text-red-600">
+                          {(result.probability * 100).toFixed(1)}%
+                        </span>
+                      </div>
 
-    {/* Fraud */}
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <span className="text-[13px] font-bold text-slate-700">
-          Probabilitas Fraud
-        </span>
-        <span className="text-[14px] font-bold text-red-600">
-          {(result.probability * 100).toFixed(1)}%
-        </span>
-      </div>
+                      <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-700 ease-out"
+                          style={{
+                            width: `${result.probability * 100}%`,
+                            backgroundColor: FRAUD_COLOR,
+                          }}
+                        />
+                      </div>
+                    </div>
 
-      <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{
-            width: `${result.probability * 100}%`,
-            backgroundColor: FRAUD_COLOR,
-          }}
-        />
-      </div>
-    </div>
+                    {/* Valid */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[13px] font-bold text-slate-700">
+                          Probabilitas Valid
+                        </span>
+                        <span className="text-[14px] font-bold text-emerald-600">
+                          {(100 - result.probability * 100).toFixed(1)}%
+                        </span>
+                      </div>
 
-    {/* Valid */}
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <span className="text-[13px] font-bold text-slate-700">
-          Probabilitas Valid
-        </span>
-        <span className="text-[14px] font-bold text-emerald-600">
-          {(100 - result.probability * 100).toFixed(1)}%
-        </span>
-      </div>
+                      <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-700 ease-out"
+                          style={{
+                            width: `${100 - result.probability * 100}%`,
+                            backgroundColor: LEGIT_COLOR,
+                          }}
+                        />
+                      </div>
+                    </div>
 
-      <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{
-            width: `${100 - result.probability * 100}%`,
-            backgroundColor: LEGIT_COLOR,
-          }}
-        />
-      </div>
-    </div>
-
-  </div>
-</div>
+                  </div>
+                </div>
               
 
                 {shapAnomaly && (
@@ -788,8 +780,8 @@ export default function ORFPage() {
                             <div 
                               className={`flex items-center justify-center gap-1.5 w-28 h-8 rounded-lg text-[11px] font-bold border transition-all hover:opacity-90 ${
                                 isExpanded 
-                                  ? "bg-slate-100 border-slate-200 text-slate-600" // Warna saat kebuka (Tutup)
-                                  : "text-white shadow-sm" // Warna saat tertutup (Lihat Analisis)
+                                  ? "bg-slate-100 border-slate-200 text-slate-600" 
+                                  : "text-white shadow-sm"
                               }`}
                               style={!isExpanded ? { backgroundColor: BLUE, borderColor: BLUE } : {}}
                             >
